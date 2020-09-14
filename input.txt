@@ -1,0 +1,16 @@
+// Number of Hosts
+5
+
+// Adjacency Matrix
+01100
+10110
+11001
+01000
+00100
+
+// Vulnerabilities
+1 v0
+1 v1
+1 v2
+1 v3
+1 v4
