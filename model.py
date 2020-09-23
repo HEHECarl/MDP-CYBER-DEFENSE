@@ -62,6 +62,7 @@ class ModelGenerator:
                 self.rewards_weights.append(float(row[0]))
                 self.rewards_weights.append(float(row[1]))
                 self.rewards_weights.append(float(row[2]))
+                self.rewards_weights.append(float(row[3]))
 
     def set_target(self, target):
         self.target = target
@@ -128,12 +129,15 @@ class ModelGenerator:
             self.total_vulnerabilities_count)
         c = self.rewards_weights[1]*(self.hosts_number - len(state.get_compromised_hosts())) / float(
             self.hosts_number)
+        a = 0
         if state.is_target_compromised():
             t = self.rewards_weights[2]
         else:
             t = 0
+            if state.is_network_safe(self.adjacency_matrix, self.hosts_number):
+                a = self.rewards_weights[3]
 
-        return round(v + c - t, 5)
+        return round(v + c - t + a, 5)
 
 
 class State:
@@ -151,6 +155,7 @@ class State:
         self.target = target
         self.vulnerabilities = deepcopy(vulnerabilities)
         self.compromised_hosts = deepcopy(compromised)
+        self.compromised_hosts = sorted(self.compromised_hosts)
 
     def __eq__(self, other):
         if self.attacker_position == other.attacker_position \
@@ -181,4 +186,13 @@ class State:
             return False
         else:
             return self.attacker_position == self.target
+
+    def is_network_safe(self, adjacency_matrix, host_number):
+        for i in self.compromised_hosts:
+            for j in range(host_number):
+                if j not in self.compromised_hosts and adjacency_matrix[i][j] == 1 and self.vulnerabilities[j]:
+                    return False
+
+        return True
+
 

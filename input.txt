@@ -1,18 +1,22 @@
 // Number of Hosts
-3
+5
 
 // Adjacency Matrix
-011
-101
-110
+01100
+10110
+11001
+01000
+00100
 
 // Vulnerabilities
-1 v0 0.5
-1 v1 0.5
-1 v2 0.5
+1 v0 0.2
+1 v1 0.3
+1 v2 0.4
+1 v3 0.5
+1 v4 0.6
 
 // Attack Defend Ratio
 0.5
 
 // Rewards Weight V C T
-0.3 0.3 0.4
+0.2 0.2 1 1
