@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import random
 
-VUL_PROB = 0.9
+VUL_PROB = 1.0
 
 
 class NetworkInfo:
@@ -15,13 +15,13 @@ class NetworkInfo:
     def generate_random_network(self):
         self.network = nx.gnm_random_graph(self.hosts_number, int(self.hosts_number * 1.5))
         for host in self.get_hosts():
-            self.network.nodes[host]['vuls'] = {}
+            self.network.nodes[host]['vuls'] = []
             self.network.nodes[host]['comp'] = False
             if random.random() < VUL_PROB:
-                self.network.nodes[host]['vuls'][0] = random.randint(0, 20) / 20
+                self.network.nodes[host]['vuls'].append(VulnerabilityInfo().random_generate())
             else:
                 for count in range(random.randint(0, self.max_vul_each_host)):
-                    self.network.nodes[host]['vuls'][count] = random.randint(0, 20) / 20
+                    self.network.nodes[host]['vuls'].append(VulnerabilityInfo().random_generate())
         print(self.network.nodes[0])
 
     def get_hosts(self):
@@ -55,5 +55,21 @@ class NetworkInfo:
 
 
 class VulnerabilityInfo:
-    def __init__(self):
-        
+    def __init__(self, score=0, mitigations=None):
+        if mitigations is None:
+            mitigations = []
+
+        self.score = score
+        self.mitigations = mitigations
+
+    def random_generate(self):
+        self.score = random.randint(0, 20) / 20
+        for count in range(random.randint(0, 3)):
+            self.mitigations.append(Mitigation(random.randint(0, 20) / 20, random.randint(0, 20) / 20))
+        return self
+
+
+class Mitigation:
+    def __init__(self, cost, prob_success):
+        self.cost = cost
+        self.prob_success = prob_success
