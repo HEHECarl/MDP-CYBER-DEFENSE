@@ -1,11 +1,127 @@
 from copy import deepcopy
+from network_info import *
 import collections
+
+ATTACK = 0
+PATCH = 1
 
 
 class ModelGenerator:
-    def __init__(self, network):
-        self.network = network
+    def __init__(self, networkInfo):
+        self.networkInfo = networkInfo
         self.states = []
+        self.actions = []
+        self.trans = []
+        self.vuls = {}
+
+    def initialize_vuls(self):
+        for host in self.networkInfo.get_hosts():
+            vul_list = []
+            for vul in self.networkInfo.get_vuls(host):
+                vul_list.append(vul)
+            self.vuls[host] = vul_list
+
+    def initialize_states(self):
+        state_id = 0
+        self.initialize_vuls()
+        queue_states = [State(deepcopy(self.vuls), [])]
+        while queue_states:
+            current_state = queue_states.pop(0)
+            if current_state not in self.states:
+                state_id += 1
+                current_state.id = state_id
+                self.states.append(current_state)
+                next_states = self.generate_next_states(deepcopy(current_state))
+                if next_states:
+                    queue_states.extend(next_states)
+
+    def generate_next_states(self, current_state):
+        """ Function to generate the next possible states based on current state
+
+            The function now only support patch vulnerability and one attacker only
+        """
+        next_states = []
+        vulnerabilities = current_state.get_vulnerabilities()
+        compromised_hosts = current_state.get_compromised_hosts()
+
+        if not compromised_hosts:
+            for host in self.networkInfo.get_hosts():
+                if vulnerabilities[host]:
+                    s = State(vulnerabilities, compromised_hosts + [host])
+                    next_states.append(s)
+        else:
+
+            for host in self.networkInfo.get_hosts():
+                # Attacker move to next host
+                # The host need to be not compromised
+                # The host need to have vulnerability
+                if host not in compromised_hosts and vulnerabilities[host] != []:
+                    for adj in self.networkInfo.network.adj[host]:
+                        if adj in compromised_hosts:
+                            s = State(vulnerabilities, compromised_hosts + [host])
+                            next_states.append(s)
+
+        # Patch Vulnerability
+        # Is it necessary to patch a vulnerabilities to a host already compromised?
+        for host in self.networkInfo.get_hosts():
+            if host not in compromised_hosts and vulnerabilities[host] != []:
+                for vul in vulnerabilities[host]:
+                    new_vulnerabilities = deepcopy(vulnerabilities)
+                    new_vulnerabilities[host].remove(vul)
+                    s = State(new_vulnerabilities, compromised_hosts)
+                    next_states.append(s)
+
+            # Block Port
+
+            # Disable Service
+
+        return next_states
+
+    def initialize_transition_table(self):
+        state_size = len(self.states)
+        self.trans = [[0 for x in range(state_size)] for y in range(state_size)]
+        for state in self.states:
+            vulnerabilities = state.get_vulnerabilities()
+            compromised_hosts = state.get_compromised_hosts()
+            if not compromised_hosts:
+                for host in self.networkInfo.get_hosts():
+                    if vulnerabilities[host]:
+                        a = Action(ATTACK, host)
+                        s = State(vulnerabilities, compromised_hosts + [host])
+                        if a not in self.actions:
+                            self.actions.append(a)
+                        self.trans[self.states.index(state)][self.states.index(s)] = 1
+
+            else:
+
+                for host in self.networkInfo.get_hosts():
+                    # Attacker move to next host
+                    # The host need to be not compromised
+                    # The host need to have vulnerability
+                    if host not in compromised_hosts and vulnerabilities[host] != []:
+                        for adj in self.networkInfo.network.adj[host]:
+                            if adj in compromised_hosts:
+                                a = Action(ATTACK, host)
+                                s = State(vulnerabilities, compromised_hosts + [host])
+                                if a not in self.actions:
+                                    self.actions.append(a)
+                                self.trans[self.states.index(state)][self.states.index(s)] = 1
+
+            # Patch Vulnerability
+            # Is it necessary to patch a vulnerabilities to a host already compromised?
+            for host in self.networkInfo.get_hosts():
+                if host not in compromised_hosts and vulnerabilities[host] != []:
+                    for vul in vulnerabilities[host]:
+                        new_vulnerabilities = deepcopy(vulnerabilities)
+                        new_vulnerabilities[host].remove(vul)
+                        a = Action(PATCH, host, vul)
+                        s = State(new_vulnerabilities, compromised_hosts)
+                        if a not in self.actions:
+                            self.actions.append(a)
+                        self.trans[self.states.index(state)][self.states.index(s)] = 1
+
+    # def initialize_q_table(self):
+
 
 
 
@@ -149,59 +265,53 @@ class ModelGenerator:
 #         return round(v + c - t + a, 5)
 #
 #
-# class State:
-#     """A state model describing the current network
-#
-#     Args:
-#         attacker_position (int): Where attacker at
-#         vulnerabilities (2d string list): All the vulnerabilities each host has
-#         target (int): Target host
-#         compromised_hosts (int list): List of hosts which has already been attacked
-#
-#     """
-#     def __init__(self, attacker, target, vulnerabilities, compromised):
-#         self.attacker_position = attacker
-#         self.target = target
-#         self.vulnerabilities = deepcopy(vulnerabilities)
-#         self.compromised_hosts = deepcopy(compromised)
-#         self.compromised_hosts = sorted(self.compromised_hosts)
-#
-#     def __eq__(self, other):
-#         if self.attacker_position == other.attacker_position \
-#                 and self.target == other.target \
-#                 and not any(x != y for x, y in zip(self.vulnerabilities, other.vulnerabilities)) \
-#                 and set(self.compromised_hosts) == set(other.compromised_hosts):
-#             return True
-#         else:
-#             return False
-#
-#     def get_attacker_position(self):
-#         return self.attacker_position
-#
-#     def get_vulnerabilities(self):
-#         return self.vulnerabilities
-#
-#     def get_vulnerabilities_count(self):
-#         count = 0
-#         for v in self.vulnerabilities:
-#             count += len(v)
-#         return count
-#
-#     def get_compromised_hosts(self):
-#         return self.compromised_hosts
-#
-#     def is_target_compromised(self):
-#         if self.target is None:
-#             return False
-#         else:
-#             return self.attacker_position == self.target
-#
-#     def is_network_safe(self, adjacency_matrix, host_number):
-#         for i in self.compromised_hosts:
-#             for j in range(host_number):
-#                 if j not in self.compromised_hosts and adjacency_matrix[i][j] == 1 and self.vulnerabilities[j]:
-#                     return False
-#
-#         return True
+class State:
+    """A state model describing the current network
 
+    Args:
+        vulnerabilities (2d string list): All the vulnerabilities each host has
+        compromised (int list): List of hosts which has already been attacked
+    """
+    def __init__(self, vulnerabilities, compromised):
+        self.vulnerabilities = deepcopy(vulnerabilities)
+        self.compromised_hosts = sorted(deepcopy(compromised))
+        self.id = None
+
+    def __eq__(self, other):
+        if self.vulnerabilities == other.vulnerabilities \
+                and set(self.compromised_hosts) == set(other.compromised_hosts):
+            return True
+        else:
+            return False
+
+    def get_vulnerabilities(self):
+        return self.vulnerabilities
+
+    def get_compromised_hosts(self):
+        return self.compromised_hosts
+
+    def get_id(self):
+        return self.id
+
+
+class Action:
+    def __init__(self, action, target, vul=None):
+        self.action = action
+        self.target = target
+        self.vul = vul
+
+    def __eq__(self, other):
+        if self.action == other.action and self.target == other.target and self.vul == other.vul:
+            return True
+        else:
+            return False
+
+    def get_action(self):
+        return self.action
+
+    def get_target(self):
+        return self.target
+
+    def get_vul(self):
+        return  self.vul
 

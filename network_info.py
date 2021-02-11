@@ -3,7 +3,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import random
 
-VUL_PROB = 1.0
+VUL_PROB = 1.0  # Define the probability host will only have one vul
+LINK_COF = 1.0  # The number of links compare to hosts, for example with LINK_COF = 1.5, 10 hosts will have 15 links
 
 
 class NetworkInfo:
@@ -13,16 +14,18 @@ class NetworkInfo:
         self.network = None
 
     def generate_random_network(self):
-        self.network = nx.gnm_random_graph(self.hosts_number, int(self.hosts_number * 1.5))
+        vul_id = 0
+        self.network = nx.gnm_random_graph(self.hosts_number, int(self.hosts_number * LINK_COF))
         for host in self.get_hosts():
             self.network.nodes[host]['vuls'] = []
             self.network.nodes[host]['comp'] = False
             if random.random() < VUL_PROB:
-                self.network.nodes[host]['vuls'].append(VulnerabilityInfo().random_generate())
+                vul_id += 1
+                self.network.nodes[host]['vuls'].append(VulnerabilityInfo().random_generate(vul_id))
             else:
                 for count in range(random.randint(0, self.max_vul_each_host)):
-                    self.network.nodes[host]['vuls'].append(VulnerabilityInfo().random_generate())
-        print(self.network.nodes[0])
+                    vul_id += 1
+                    self.network.nodes[host]['vuls'].append(VulnerabilityInfo().random_generate(vul_id))
 
     def get_hosts(self):
         if self.network is not None:
@@ -61,12 +64,20 @@ class VulnerabilityInfo:
 
         self.score = score
         self.mitigations = mitigations
+        self.id = 0
 
-    def random_generate(self):
+    def random_generate(self, id):
+        self.id = id
         self.score = random.randint(0, 20) / 20
         for count in range(random.randint(0, 3)):
             self.mitigations.append(Mitigation(random.randint(0, 20) / 20, random.randint(0, 20) / 20))
         return self
+
+    def __eq__(self, other):
+        if self.id == other.id:
+            return True
+        else:
+            return False
 
 
 class Mitigation:
