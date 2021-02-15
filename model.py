@@ -13,6 +13,11 @@ class ModelGenerator:
         self.actions = []
         self.trans = []
         self.vuls = {}
+        self.q_table = []
+
+        self.initialize_states()
+        self.initialize_transition_table()
+        self.initialize_q_table()
 
     def initialize_vuls(self):
         for host in self.networkInfo.get_hosts():
@@ -120,151 +125,56 @@ class ModelGenerator:
                             self.actions.append(a)
                         self.trans[self.states.index(state)][self.states.index(s)] = 1
 
-    # def initialize_q_table(self):
+    def initialize_q_table(self):
+        self.q_table = [[0 for x in range(len(self.states))] for y in range(len(self.actions))]
+
+    def get_next_states(self, state_index):
+        return_list = []
+        for i in range(len(self.trans[state_index])):
+            if self.trans[state_index][i] == 1:
+                return_list.append(i)
+        return return_list
+
+    def get_random_next_state(self, state_index):
+        return_list = self.get_next_states(state_index)
+        return return_list[np.random.randint(0, len(return_list))]
+
+    def get_max_next_state(self, state_index):
+        return_list = self.get_next_states(state_index)
+        max_q = -9999.99
+        return_state = None
+        for j in range(len(return_list)):
+            n_s = return_list[j]
+            q = self.q_table[state_index][n_s]
+            if q > max_q:
+                max_q = q
+                return_state = n_s
+        return return_state
+
+    def get_reward(self, current_s, next_s):
+        return 0
+
+    def train_model(self, gamma, lrn_rate, epsilon, max_epochs):
+        for i in range(max_epochs):
+            curr_s = np.random.randint(0, len(self.states))
+
+            while():
+                if random.uniform(0, 1) < epsilon:  # Explore: select a random action
+                    n_s = self.get_random_next_state(curr_s)
+                else:   # Exploit: select the action with max value (future reward)
+                    n_s = self.get_max_next_state(curr_s)
+
+                nn_q = self.q_table[n_s][self.get_max_next_state(n_s)]
+
+                self.q_table[curr_s][n_s] = ((1 - lrn_rate) * self.q_table[curr_s][n_s]) + \
+                                            (lrn_rate * (self.get_reward(curr_s, n_s) + (gamma * nn_q)))
+
+                curr_s = n_s
+
+                if not len(self.get_next_states(curr_s)):
+                    break
 
 
-
-
-
-
-# class ModelGenerator:
-#     """ModelGenerator to generator input for markov decision process model
-#
-#     Args:
-#         hosts_number (int): Number of hosts in the network
-#         adjacency_matrix (2d int list): A adjacency matrix describing the network
-#         vulnerabilities (list of dictionary): All the vulnerabilities each host has with difficulties
-#         target (int): Target host
-#         attacker_entry_point (int): Where attack will enter the network,
-#             null means every host can be potentially attacked first
-#         states (State list): all the possible states, one of the MDP model parameters
-#
-#     """
-#     def __init__(self):
-#         self.hosts_number = None
-#         self.target = None
-#         self.attacker_entry_point = None
-#         self.defense_probability = None
-#
-#         self.total_vulnerabilities_count = 0
-#
-#         self.adjacency_matrix = []
-#         self.vulnerabilities = []
-#         self.rewards_weights = []
-#         self.states = []
-#
-#     def get_states(self):
-#         return self.states
-#
-#     def import_data(self, path):
-#         f = open(path, "r")
-#         while True:
-#             line = f.readline()
-#             if not line:
-#                 break
-#             if "// Number of Hosts" in line:
-#                 self.hosts_number = int(f.readline())
-#             elif "// Adjacency Matrix" in line:
-#                 for i in range(self.hosts_number):
-#                     adj = []
-#                     row = f.readline()
-#                     for j in range(self.hosts_number):
-#                         adj.append(int(row[j]))
-#                     self.adjacency_matrix.append(adj)
-#             elif "// Vulnerabilities" in line:
-#                 for i in range(self.hosts_number):
-#                     vul = {}
-#                     row = f.readline().split()
-#                     count = int(row[0])
-#                     self.total_vulnerabilities_count += count
-#                     for j in range(count):
-#                         vul[row[j * 2 + 1]] = float(row[j * 2 + 2])
-#                     self.vulnerabilities.append(vul)
-#             elif "// Attack Defend Ratio" in line:
-#                 self.defense_probability = float(f.readline())
-#             elif "// Rewards Weight V C T" in line:
-#                 row = f.readline().split()
-#                 self.rewards_weights.append(float(row[0]))
-#                 self.rewards_weights.append(float(row[1]))
-#                 self.rewards_weights.append(float(row[2]))
-#                 self.rewards_weights.append(float(row[3]))
-#
-#     def set_target(self, target):
-#         self.target = target
-#
-#     def set_attacker_entry_point(self, position):
-#         self.attacker_entry_point = position
-#
-#     def generate_states(self):
-#         """ Function to generate a finite states for MDP model
-#
-#             The function use Breath First Search algorithm to generate all the possible states
-#         """
-#         queue_states = []
-#         # Add Attacker Entry Point
-#         if self.attacker_entry_point is not None:
-#             queue_states.append(State(self.attacker_entry_point, self.target, self.vulnerabilities,
-#                                       [self.attacker_entry_point]))
-#         else:
-#             for host in range(self.hosts_number):
-#                 queue_states.append(State(host, self.target, self.vulnerabilities, [host]))
-#
-#         while queue_states:
-#             current_state = queue_states.pop(0)
-#             if current_state not in self.states:
-#                 self.states.append(current_state)
-#                 if not current_state.is_target_compromised():
-#                     next_states = self.generate_next_states(deepcopy(current_state))
-#                     if next_states:
-#                         queue_states.extend(next_states)
-#
-#     def generate_next_states(self, current_state):
-#         """ Function to generate the next possible states based on current state
-#
-#             The function now only support patch vulnerability and one attacker only
-#         """
-#         next_states = []
-#         attacker = current_state.get_attacker_position()
-#         vulnerabilities = current_state.get_vulnerabilities()
-#         compromised_hosts = current_state.get_compromised_hosts()
-#
-#         for i in range(self.hosts_number):
-#             # Attacker move to next host
-#             # The host need to be not compromised
-#             # The host need to have vulnerability
-#             if i not in compromised_hosts and self.adjacency_matrix[attacker][i] == 1 and vulnerabilities[i]:
-#                 next_states.append(State(i, self.target, vulnerabilities, compromised_hosts + [i]))
-#
-#             # Patch Vulnerability
-#             # Is it necessary to patch a vulnerabilities to a host already compromised?
-#             if i not in compromised_hosts and vulnerabilities[i]:
-#                 for v in vulnerabilities[i]:
-#                     new_vulnerabilities = deepcopy(vulnerabilities)
-#                     new_vulnerabilities[i].pop(v)
-#                     next_states.append(State(attacker, self.target, new_vulnerabilities, compromised_hosts))
-#
-#             # Block Port
-#
-#             # Disable Service
-#
-#         return next_states
-#
-#     def get_state_score(self, state):
-#         v = self.rewards_weights[0]*(self.total_vulnerabilities_count - state.get_vulnerabilities_count()) / float(
-#             self.total_vulnerabilities_count)
-#         c = self.rewards_weights[1]*(self.hosts_number - len(state.get_compromised_hosts())) / float(
-#             self.hosts_number)
-#         a = 0
-#         if state.is_target_compromised():
-#             t = self.rewards_weights[2]
-#         else:
-#             t = 0
-#             if state.is_network_safe(self.adjacency_matrix, self.hosts_number):
-#                 a = self.rewards_weights[3]
-#
-#         return round(v + c - t + a, 5)
-#
-#
 class State:
     """A state model describing the current network
 
@@ -313,5 +223,5 @@ class Action:
         return self.target
 
     def get_vul(self):
-        return  self.vul
+        return self.vul
 

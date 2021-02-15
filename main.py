@@ -8,12 +8,10 @@ from network_info import *
 
 
 def main():
-    ni = NetworkInfo(3, 2)
+    ni = NetworkInfo(4, 2)
     ni.generate_random_network()
     ni.draw_network()
     model = ModelGenerator(ni)
-    model.initialize_states()
-    model.initialize_transition_table()
     print(model.trans)
 
 

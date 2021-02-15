@@ -4,7 +4,7 @@ import numpy as np
 import random
 
 VUL_PROB = 1.0  # Define the probability host will only have one vul
-LINK_COF = 1.0  # The number of links compare to hosts, for example with LINK_COF = 1.5, 10 hosts will have 15 links
+LINK_COF = 1.5  # The number of links compare to hosts, for example with LINK_COF = 1.5, 10 hosts will have 15 links
 
 
 class NetworkInfo:
