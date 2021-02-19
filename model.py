@@ -12,6 +12,7 @@ class ModelGenerator:
         self.states = []
         self.actions = []
         self.trans = []
+        self.rewards = []
         self.vuls = {}
         self.q_table = []
 
@@ -85,6 +86,7 @@ class ModelGenerator:
     def initialize_transition_table(self):
         state_size = len(self.states)
         self.trans = [[0 for x in range(state_size)] for y in range(state_size)]
+        self.rewards = [[0 for x in range(state_size)] for y in range(state_size)]
         for state in self.states:
             vulnerabilities = state.get_vulnerabilities()
             compromised_hosts = state.get_compromised_hosts()
@@ -95,10 +97,9 @@ class ModelGenerator:
                         s = State(vulnerabilities, compromised_hosts + [host])
                         if a not in self.actions:
                             self.actions.append(a)
-                        self.trans[self.states.index(state)][self.states.index(s)] = 1
-
+                        self.trans[self.states.index(state)][self.states.index(s)] = self.networkInfo.get_cvss(host)
+                        self.rewards[self.states.index(state)][self.states.index(s)] = -self.networkInfo.get_cvss(host)
             else:
-
                 for host in self.networkInfo.get_hosts():
                     # Attacker move to next host
                     # The host need to be not compromised
@@ -110,7 +111,9 @@ class ModelGenerator:
                                 s = State(vulnerabilities, compromised_hosts + [host])
                                 if a not in self.actions:
                                     self.actions.append(a)
-                                self.trans[self.states.index(state)][self.states.index(s)] = 1
+                                self.trans[self.states.index(state)][self.states.index(s)] = self.networkInfo.get_cvss(host)
+                                self.rewards[self.states.index(state)][
+                                    self.states.index(s)] = -self.networkInfo.get_cvss(host)
 
             # Patch Vulnerability
             # Is it necessary to patch a vulnerabilities to a host already compromised?
@@ -123,55 +126,71 @@ class ModelGenerator:
                         s = State(new_vulnerabilities, compromised_hosts)
                         if a not in self.actions:
                             self.actions.append(a)
-                        self.trans[self.states.index(state)][self.states.index(s)] = 1
+                        self.trans[self.states.index(state)][self.states.index(s)] = vul.prob_success
+                        self.rewards[self.states.index(state)][
+                            self.states.index(s)] = -vul.cost
 
     def initialize_q_table(self):
-        self.q_table = [[0 for x in range(len(self.states))] for y in range(len(self.actions))]
+        self.q_table = [[0 for x in range(len(self.states))] for y in range(len(self.states))]
 
     def get_next_states(self, state_index):
         return_list = []
         for i in range(len(self.trans[state_index])):
-            if self.trans[state_index][i] == 1:
+            if self.trans[state_index][i] != 0:
                 return_list.append(i)
         return return_list
 
     def get_random_next_state(self, state_index):
         return_list = self.get_next_states(state_index)
-        return return_list[np.random.randint(0, len(return_list))]
+        if return_list:
+            return return_list[np.random.randint(0, len(return_list))]
+        else:
+            return None
 
     def get_max_next_state(self, state_index):
         return_list = self.get_next_states(state_index)
-        max_q = -9999.99
-        return_state = None
-        for j in range(len(return_list)):
-            n_s = return_list[j]
-            q = self.q_table[state_index][n_s]
-            if q > max_q:
-                max_q = q
-                return_state = n_s
-        return return_state
+        if return_list:
+            max_q = -9999.99
+            return_state = None
+            for j in range(len(return_list)):
+                n_s = return_list[j]
+                q = self.q_table[state_index][n_s]
+                if q > max_q:
+                    max_q = q
+                    return_state = n_s
+            return return_state
+        else:
+            return None
 
     def get_reward(self, current_s, next_s):
-        return 0
+        return self.rewards[current_s][next_s]
 
     def train_model(self, gamma, lrn_rate, epsilon, max_epochs):
         for i in range(max_epochs):
             curr_s = np.random.randint(0, len(self.states))
 
-            while():
+            while True:
                 if random.uniform(0, 1) < epsilon:  # Explore: select a random action
                     n_s = self.get_random_next_state(curr_s)
                 else:   # Exploit: select the action with max value (future reward)
                     n_s = self.get_max_next_state(curr_s)
 
-                nn_q = self.q_table[n_s][self.get_max_next_state(n_s)]
+                if not n_s:
+                    break
+
+                nn_s = self.get_max_next_state(n_s)
+
+                if nn_s:
+                    nn_q = self.q_table[n_s][self.get_max_next_state(n_s)]
+                else:
+                    nn_q = 0
 
                 self.q_table[curr_s][n_s] = ((1 - lrn_rate) * self.q_table[curr_s][n_s]) + \
                                             (lrn_rate * (self.get_reward(curr_s, n_s) + (gamma * nn_q)))
 
                 curr_s = n_s
 
-                if not len(self.get_next_states(curr_s)):
+                if not self.get_next_states(curr_s):
                     break
 
 

@@ -19,6 +19,7 @@ class NetworkInfo:
         for host in self.get_hosts():
             self.network.nodes[host]['vuls'] = []
             self.network.nodes[host]['comp'] = False
+            self.network.nodes[host]['cvss'] = random.randint(0, 20) / 20
             if random.random() < VUL_PROB:
                 vul_id += 1
                 self.network.nodes[host]['vuls'].append(VulnerabilityInfo().random_generate(vul_id))
@@ -36,6 +37,12 @@ class NetworkInfo:
     def get_vuls(self, host):
         if self.network is not None:
             return self.network.nodes[host]['vuls']
+        else:
+            print("Network Info not Initialized")
+
+    def get_cvss(self, host):
+        if self.network is not None:
+            return self.network.nodes[host]['cvss']
         else:
             print("Network Info not Initialized")
 
@@ -58,19 +65,15 @@ class NetworkInfo:
 
 
 class VulnerabilityInfo:
-    def __init__(self, score=0, mitigations=None):
-        if mitigations is None:
-            mitigations = []
-
-        self.score = score
-        self.mitigations = mitigations
+    def __init__(self):
+        self.cost = 0
+        self.prob_success = 0
         self.id = 0
 
     def random_generate(self, id):
         self.id = id
-        self.score = random.randint(0, 20) / 20
-        for count in range(random.randint(0, 3)):
-            self.mitigations.append(Mitigation(random.randint(0, 20) / 20, random.randint(0, 20) / 20))
+        self.cost = random.randint(0, 20) / 20
+        self.prob_success = random.randint(0, 20) / 20
         return self
 
     def __eq__(self, other):
