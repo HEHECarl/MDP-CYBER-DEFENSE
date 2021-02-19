@@ -12,7 +12,8 @@ class ModelGenerator:
         self.states = []
         self.actions = []
         self.trans = []
-        self.rewards = []
+        self.rewards_success = []
+        self.rewards_fail = []
         self.vuls = {}
         self.q_table = []
 
@@ -97,8 +98,9 @@ class ModelGenerator:
                         s = State(vulnerabilities, compromised_hosts + [host])
                         if a not in self.actions:
                             self.actions.append(a)
-                        self.trans[self.states.index(state)][self.states.index(s)] = self.networkInfo.get_cvss(host)
-                        self.rewards[self.states.index(state)][self.states.index(s)] = -self.networkInfo.get_cvss(host)
+                        self.trans[self.states.index(state)][self.states.index(s)] = 1 - self.networkInfo.get_cvss(host)
+                        self.rewards_success[self.states.index(state)][self.states.index(s)] = -self.networkInfo.get_cvss(host)
+                        self.rewards_fail[self.states.index(state)][self.states.index(s)] = 0
             else:
                 for host in self.networkInfo.get_hosts():
                     # Attacker move to next host
@@ -111,9 +113,9 @@ class ModelGenerator:
                                 s = State(vulnerabilities, compromised_hosts + [host])
                                 if a not in self.actions:
                                     self.actions.append(a)
-                                self.trans[self.states.index(state)][self.states.index(s)] = self.networkInfo.get_cvss(host)
-                                self.rewards[self.states.index(state)][
-                                    self.states.index(s)] = -self.networkInfo.get_cvss(host)
+                                self.trans[self.states.index(state)][self.states.index(s)] = 1 - self.networkInfo.get_cvss(host)
+                                self.rewards_success[self.states.index(state)][self.states.index(s)] = -self.networkInfo.get_cvss(host)
+                                self.rewards_fail[self.states.index(state)][self.states.index(s)] = 0
 
             # Patch Vulnerability
             # Is it necessary to patch a vulnerabilities to a host already compromised?
@@ -127,7 +129,9 @@ class ModelGenerator:
                         if a not in self.actions:
                             self.actions.append(a)
                         self.trans[self.states.index(state)][self.states.index(s)] = vul.prob_success
-                        self.rewards[self.states.index(state)][
+                        self.rewards_success[self.states.index(state)][
+                            self.states.index(s)] = -vul.cost
+                        self.rewards_fail[self.states.index(state)][
                             self.states.index(s)] = -vul.cost
 
     def initialize_q_table(self):
@@ -162,8 +166,11 @@ class ModelGenerator:
         else:
             return None
 
-    def get_reward(self, current_s, next_s):
-        return self.rewards[current_s][next_s]
+    def get_reward(self, current_s, next_s, success):
+        if success:
+            return self.rewards_success[current_s][next_s]
+        else:
+            return self.rewards_fail[current_s][next_s]
 
     def train_model(self, gamma, lrn_rate, epsilon, max_epochs):
         for i in range(max_epochs):
@@ -178,6 +185,12 @@ class ModelGenerator:
                 if not n_s:
                     break
 
+                if random.uniform(0, 1) < self.trans[curr_s][n_s]:
+                    reward = self.get_reward(curr_s, n_s, 1)
+                else:
+                    reward = self.get_reward(curr_s, n_s, 0)
+                    n_s = curr_s
+
                 nn_s = self.get_max_next_state(n_s)
 
                 if nn_s:
@@ -186,7 +199,7 @@ class ModelGenerator:
                     nn_q = 0
 
                 self.q_table[curr_s][n_s] = ((1 - lrn_rate) * self.q_table[curr_s][n_s]) + \
-                                            (lrn_rate * (self.get_reward(curr_s, n_s) + (gamma * nn_q)))
+                                            (lrn_rate * (reward + (gamma * nn_q)))
 
                 curr_s = n_s
 
