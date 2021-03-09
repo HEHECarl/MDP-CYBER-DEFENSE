@@ -1,210 +1,208 @@
 from copy import deepcopy
 from network_info import *
+import numpy as np
 import collections
 
-ATTACK = 0
-PATCH = 1
+IDLE = 0
+ATTACK = 1
+PATCH = 2
+BLOCK = 3
 
 
 class ModelGenerator:
-    def __init__(self, networkInfo):
+    def __init__(self, networkInfo, actions):
         self.networkInfo = networkInfo
+        self.actions = deepcopy(actions)
+        self.q_actions = deepcopy(actions)
+        self.q_actions.insert(0, Action(IDLE))
+        self.state_id = 0
         self.states = []
-        self.actions = []
+        self.queue_states = []
         self.trans = []
-        self.rewards_success = []
-        self.rewards_fail = []
-        self.vuls = {}
         self.q_table = []
 
         self.initialize_states()
-        self.initialize_transition_table()
         self.initialize_q_table()
 
-    def initialize_vuls(self):
-        for host in self.networkInfo.get_hosts():
-            vul_list = []
-            for vul in self.networkInfo.get_vuls(host):
-                vul_list.append(vul)
-            self.vuls[host] = vul_list
-
     def initialize_states(self):
-        state_id = 0
-        self.initialize_vuls()
-        queue_states = [State(deepcopy(self.vuls), [])]
-        while queue_states:
-            current_state = queue_states.pop(0)
-            if current_state not in self.states:
-                state_id += 1
-                current_state.id = state_id
-                self.states.append(current_state)
-                next_states = self.generate_next_states(deepcopy(current_state))
-                if next_states:
-                    queue_states.extend(next_states)
+        initial_state = State(self.get_initial_vuls(), self.get_initial_comps(), self.networkInfo.network.edges)
+        initial_state.id = self.state_id
+        self.state_id += 1
+
+        self.queue_states = [initial_state]
+        self.trans = np.array([[None]])
+
+        while self.queue_states:
+            current_state = self.queue_states.pop(0)
+            self.states.append(current_state)
+            self.generate_next_states(current_state)
 
     def generate_next_states(self, current_state):
         """ Function to generate the next possible states based on current state
 
             The function now only support patch vulnerability and one attacker only
         """
-        next_states = []
         vulnerabilities = current_state.get_vulnerabilities()
         compromised_hosts = current_state.get_compromised_hosts()
+        edges = current_state.get_edges()
 
         if not compromised_hosts:
             for host in self.networkInfo.get_hosts():
                 if vulnerabilities[host]:
-                    s = State(vulnerabilities, compromised_hosts + [host])
-                    next_states.append(s)
-        else:
+                    s = State(vulnerabilities, compromised_hosts + [host], edges)
+                    a = Action(ATTACK, host)
+                    self.add_new_state(s, current_state, a, 1, -self.networkInfo.get_cvss(host), 0)
 
-            for host in self.networkInfo.get_hosts():
+        else:
+            for host in compromised_hosts:
                 # Attacker move to next host
                 # The host need to be not compromised
                 # The host need to have vulnerability
-                if host not in compromised_hosts and vulnerabilities[host] != []:
-                    for adj in self.networkInfo.network.adj[host]:
-                        if adj in compromised_hosts:
-                            s = State(vulnerabilities, compromised_hosts + [host])
-                            next_states.append(s)
+                for adj in self.get_adjs(host, edges):
+                    if adj not in compromised_hosts and vulnerabilities[adj]:
+                        s = State(vulnerabilities, compromised_hosts + [adj], edges)
+                        a = Action(ATTACK, host)
+                        self.add_new_state(s, current_state, a, 1, -self.networkInfo.get_cvss(host), 0)
 
         # Patch Vulnerability
         # Is it necessary to patch a vulnerabilities to a host already compromised?
-        for host in self.networkInfo.get_hosts():
-            if host not in compromised_hosts and vulnerabilities[host] != []:
-                for vul in vulnerabilities[host]:
+        for action in self.actions:
+            if action.action == PATCH:
+                if action.target not in compromised_hosts and action.vul in vulnerabilities[action.target]:
                     new_vulnerabilities = deepcopy(vulnerabilities)
-                    new_vulnerabilities[host].remove(vul)
-                    s = State(new_vulnerabilities, compromised_hosts)
-                    next_states.append(s)
-
-            # Block Port
-
-            # Disable Service
-
-        return next_states
-
-    def initialize_transition_table(self):
-        state_size = len(self.states)
-        self.trans = [[0 for x in range(state_size)] for y in range(state_size)]
-        self.rewards = [[0 for x in range(state_size)] for y in range(state_size)]
-        for state in self.states:
-            vulnerabilities = state.get_vulnerabilities()
-            compromised_hosts = state.get_compromised_hosts()
-            if not compromised_hosts:
-                for host in self.networkInfo.get_hosts():
-                    if vulnerabilities[host]:
-                        a = Action(ATTACK, host)
-                        s = State(vulnerabilities, compromised_hosts + [host])
-                        if a not in self.actions:
-                            self.actions.append(a)
-                        self.trans[self.states.index(state)][self.states.index(s)] = 1 - self.networkInfo.get_cvss(host)
-                        self.rewards_success[self.states.index(state)][self.states.index(s)] = -self.networkInfo.get_cvss(host)
-                        self.rewards_fail[self.states.index(state)][self.states.index(s)] = 0
-            else:
-                for host in self.networkInfo.get_hosts():
-                    # Attacker move to next host
-                    # The host need to be not compromised
-                    # The host need to have vulnerability
-                    if host not in compromised_hosts and vulnerabilities[host] != []:
-                        for adj in self.networkInfo.network.adj[host]:
-                            if adj in compromised_hosts:
-                                a = Action(ATTACK, host)
-                                s = State(vulnerabilities, compromised_hosts + [host])
-                                if a not in self.actions:
-                                    self.actions.append(a)
-                                self.trans[self.states.index(state)][self.states.index(s)] = 1 - self.networkInfo.get_cvss(host)
-                                self.rewards_success[self.states.index(state)][self.states.index(s)] = -self.networkInfo.get_cvss(host)
-                                self.rewards_fail[self.states.index(state)][self.states.index(s)] = 0
-
-            # Patch Vulnerability
-            # Is it necessary to patch a vulnerabilities to a host already compromised?
-            for host in self.networkInfo.get_hosts():
-                if host not in compromised_hosts and vulnerabilities[host] != []:
-                    for vul in vulnerabilities[host]:
-                        new_vulnerabilities = deepcopy(vulnerabilities)
-                        new_vulnerabilities[host].remove(vul)
-                        a = Action(PATCH, host, vul)
-                        s = State(new_vulnerabilities, compromised_hosts)
-                        if a not in self.actions:
-                            self.actions.append(a)
-                        self.trans[self.states.index(state)][self.states.index(s)] = vul.prob_success
-                        self.rewards_success[self.states.index(state)][
-                            self.states.index(s)] = -vul.cost
-                        self.rewards_fail[self.states.index(state)][
-                            self.states.index(s)] = -vul.cost
+                    new_vulnerabilities[action.target].remove(action.vul)
+                    s = State(new_vulnerabilities, compromised_hosts, edges)
+                    self.add_new_state(s, current_state, action, action.vul.prob_success, -action.vul.cost, -action.vul.cost)
+            elif action.action == BLOCK:
+                if (action.subtarget, action.target) in edges and action.target not in compromised_hosts:
+                    new_edges = deepcopy(edges)
+                    new_edges.remove((action.subtarget, action.target))
+                    s = State(vulnerabilities, compromised_hosts, new_edges)
+                    self.add_new_state(s, current_state, action, 1, 0.5, 0)
 
     def initialize_q_table(self):
-        self.q_table = [[0 for x in range(len(self.states))] for y in range(len(self.states))]
-
-    def get_next_states(self, state_index):
-        return_list = []
-        for i in range(len(self.trans[state_index])):
-            if self.trans[state_index][i] != 0:
-                return_list.append(i)
-        return return_list
-
-    def get_random_next_state(self, state_index):
-        return_list = self.get_next_states(state_index)
-        if return_list:
-            return return_list[np.random.randint(0, len(return_list))]
-        else:
-            return None
-
-    def get_max_next_state(self, state_index):
-        return_list = self.get_next_states(state_index)
-        if return_list:
-            max_q = -9999.99
-            return_state = None
-            for j in range(len(return_list)):
-                n_s = return_list[j]
-                q = self.q_table[state_index][n_s]
-                if q > max_q:
-                    max_q = q
-                    return_state = n_s
-            return return_state
-        else:
-            return None
-
-    def get_reward(self, current_s, next_s, success):
-        if success:
-            return self.rewards_success[current_s][next_s]
-        else:
-            return self.rewards_fail[current_s][next_s]
+        self.q_table = [[0 for x in range(len(self.actions))] for y in range(len(self.states))]
 
     def train_model(self, gamma, lrn_rate, epsilon, max_epochs):
         for i in range(max_epochs):
-            curr_s = np.random.randint(0, len(self.states))
-
+            # curr_s = np.random.randint(0, len(self.states))
+            curr_s = 0
             while True:
                 if random.uniform(0, 1) < epsilon:  # Explore: select a random action
-                    n_s = self.get_random_next_state(curr_s)
+                    a = self.get_random_next_action(curr_s)
                 else:   # Exploit: select the action with max value (future reward)
-                    n_s = self.get_max_next_state(curr_s)
+                    a = self.get_max_next_action(curr_s)
 
-                if not n_s:
-                    break
-
-                if random.uniform(0, 1) < self.trans[curr_s][n_s]:
-                    reward = self.get_reward(curr_s, n_s, 1)
+                if a == 0:
+                    n_s = self.get_random_attack_state(curr_s)
+                    if n_s is None:
+                        break
                 else:
-                    reward = self.get_reward(curr_s, n_s, 0)
+                    n_s = self.get_state_from_action(curr_s, self.actions[a])
+
+                if random.uniform(0, 1) < self.trans[curr_s][n_s].rate:
+                    reward = self.trans[curr_s][n_s].reward_success
+                else:
+                    reward = self.trans[curr_s][n_s].reward_fail
                     n_s = curr_s
 
-                nn_s = self.get_max_next_state(n_s)
+                n_a = self.get_max_next_action(n_s)
+                nn_q = self.q_table[n_s][n_a]
 
-                if nn_s:
-                    nn_q = self.q_table[n_s][self.get_max_next_state(n_s)]
-                else:
-                    nn_q = 0
-
-                self.q_table[curr_s][n_s] = ((1 - lrn_rate) * self.q_table[curr_s][n_s]) + \
-                                            (lrn_rate * (reward + (gamma * nn_q)))
+                self.q_table[curr_s][a] = ((1 - lrn_rate) * self.q_table[curr_s][a]) + \
+                                          (lrn_rate * (reward + (gamma * nn_q)))
 
                 curr_s = n_s
 
-                if not self.get_next_states(curr_s):
-                    break
+    def get_next_actions(self, state_index):
+        actions = [0]
+        for j in range(len(self.trans[state_index])):
+            if self.trans[state_index][j] is not None:
+                for a in self.actions:
+                    if self.trans[state_index][j].action == a:
+                        actions.append(self.actions.index(a))
+
+        return actions
+
+    def get_random_next_action(self, state_index):
+        actions = self.get_next_actions(state_index)
+        if actions:
+            return actions[np.random.randint(0, len(actions))]
+        else:
+            return None
+
+    def get_max_next_action(self, state_index):
+        actions = self.get_next_actions(state_index)
+        if actions:
+            max_q = -9999.99
+            action = None
+            for a in actions:
+                q = self.q_table[state_index][a]
+                if q > max_q:
+                    max_q = q
+                    action = a
+            return action
+        else:
+            return None
+
+    def get_state_from_action(self, curr_s, action):
+        for j in range(len(self.trans[curr_s])):
+            if self.trans[curr_s][j] is not None:
+                if self.trans[curr_s][j].action == action:
+                    return j
+
+    def get_random_attack_state(self, curr_s):
+        l = []
+        for j in range(len(self.trans[curr_s])):
+            if self.trans[curr_s][j] is not None:
+                if self.trans[curr_s][j].action.action == 1:
+                    l.append(j)
+        if len(l) == 0:
+            return None
+        else:
+            return l[np.random.randint(0, len(l))]
+
+    def add_new_state(self, s, current_state, action, rate, reward_success, reward_fail):
+        if s not in self.states and s not in self.queue_states:
+            s.id = self.state_id
+            self.state_id += 1
+            self.queue_states.append(s)
+
+            self.trans = np.pad(self.trans, ((0, 1), (0, 1)), mode='constant', constant_values=None)
+            self.trans[current_state.id][s.id] = Transition(action, rate, reward_success, reward_fail)
+        else:
+            self.trans[current_state.id][self.get_state_id(s)] = Transition(action, rate, reward_success, reward_fail)
+
+    def get_state_id(self, s):
+        for state in self.states:
+            if state == s:
+                return state.id
+        for state in self.queue_states:
+            if state == s:
+                return state.id
+
+    def get_adjs(self, host, edges):
+        adjs = []
+        for edge in edges:
+            if edge[0] == host:
+                adjs.append(edge[1])
+        return adjs
+
+    def get_initial_vuls(self):
+        vul_list = {}
+        for host in self.networkInfo.get_hosts():
+            l = []
+            for vul in self.networkInfo.get_vuls(host):
+                l.append(vul)
+            vul_list[host] = l
+        return vul_list
+
+    def get_initial_comps(self):
+        for host in self.networkInfo.get_hosts():
+            com_list = []
+            if self.networkInfo.is_comp(host):
+                com_list.append(host)
+            return com_list
 
 
 class State:
@@ -214,14 +212,16 @@ class State:
         vulnerabilities (2d string list): All the vulnerabilities each host has
         compromised (int list): List of hosts which has already been attacked
     """
-    def __init__(self, vulnerabilities, compromised):
+    def __init__(self, vulnerabilities, compromised, edges):
         self.vulnerabilities = deepcopy(vulnerabilities)
         self.compromised_hosts = sorted(deepcopy(compromised))
+        self.edges = sorted(deepcopy(edges))
         self.id = None
 
     def __eq__(self, other):
         if self.vulnerabilities == other.vulnerabilities \
-                and set(self.compromised_hosts) == set(other.compromised_hosts):
+                and set(self.compromised_hosts) == set(other.compromised_hosts)\
+                and set(self.edges) == set(other.edges):
             return True
         else:
             return False
@@ -232,18 +232,23 @@ class State:
     def get_compromised_hosts(self):
         return self.compromised_hosts
 
+    def get_edges(self):
+        return self.edges
+
     def get_id(self):
         return self.id
 
 
 class Action:
-    def __init__(self, action, target, vul=None):
+    def __init__(self, action, target=None, subtarget=None, vul=None):
         self.action = action
         self.target = target
+        self.subtarget = subtarget
         self.vul = vul
 
     def __eq__(self, other):
-        if self.action == other.action and self.target == other.target and self.vul == other.vul:
+        if self.action == other.action and self.target == other.target \
+                and self.subtarget == other.subtarget and self.vul == other.vul:
             return True
         else:
             return False
@@ -256,4 +261,12 @@ class Action:
 
     def get_vul(self):
         return self.vul
+
+
+class Transition:
+    def __init__(self, action, rate, reward_success, reward_fail):
+        self.action = action
+        self.rate = rate
+        self.reward_success = reward_success
+        self.reward_fail = reward_fail
 
