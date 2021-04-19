@@ -10,11 +10,13 @@ BLOCK = 3
 
 
 class ModelGenerator:
-    def __init__(self, networkInfo, actions):
+    def __init__(self, networkInfo, actions, attack_path):
         self.networkInfo = networkInfo
         self.actions = deepcopy(actions)
         self.q_actions = deepcopy(actions)
         self.q_actions.insert(0, Action(IDLE))
+        self.attack_path = attack_path
+
         self.state_id = 0
         self.states = []
         self.queue_states = []
@@ -46,23 +48,38 @@ class ModelGenerator:
         compromised_hosts = current_state.get_compromised_hosts()
         edges = current_state.get_edges()
 
-        if not compromised_hosts:
-            for host in self.networkInfo.get_hosts():
-                if vulnerabilities[host]:
-                    s = State(vulnerabilities, compromised_hosts + [host], edges)
-                    a = Action(ATTACK, host)
-                    self.add_new_state(s, current_state, a, 1, -self.networkInfo.get_cvss(host), 0)
-
-        else:
-            for host in compromised_hosts:
-                # Attacker move to next host
-                # The host need to be not compromised
-                # The host need to have vulnerability
-                for adj in self.get_adjs(host, edges):
-                    if adj not in compromised_hosts and vulnerabilities[adj]:
-                        s = State(vulnerabilities, compromised_hosts + [adj], edges)
+        if self.attack_path is None:
+            if not compromised_hosts:
+                for host in self.networkInfo.get_hosts():
+                    if vulnerabilities[host]:
+                        s = State(vulnerabilities, compromised_hosts + [host], edges)
                         a = Action(ATTACK, host)
                         self.add_new_state(s, current_state, a, 1, -self.networkInfo.get_cvss(host), 0)
+
+            else:
+                for host in compromised_hosts:
+                    # Attacker move to next host
+                    # The host need to be not compromised
+                    # The host need to have vulnerability
+                    for adj in self.get_adjs_from(host, edges):
+                        if adj not in compromised_hosts and vulnerabilities[adj]:
+                            s = State(vulnerabilities, compromised_hosts + [adj], edges)
+                            a = Action(ATTACK, host)
+                            self.add_new_state(s, current_state, a, 1, -self.networkInfo.get_cvss(host), 0)
+        else:
+            for host in self.attack_path:
+                if host not in compromised_hosts and vulnerabilities[host]:
+                    if not compromised_hosts:
+                        s = State(vulnerabilities, compromised_hosts + [host], edges)
+                        a = Action(ATTACK, host)
+                        self.add_new_state(s, current_state, a, 1, -self.networkInfo.get_cvss(host), 0)
+                    else:
+                        for adj in self.get_adjs_to(host, edges):
+                            if adj in compromised_hosts:
+                                s = State(vulnerabilities, compromised_hosts + [host], edges)
+                                a = Action(ATTACK, host)
+                                self.add_new_state(s, current_state, a, 1, -self.networkInfo.get_cvss(host), 0)
+                    break
 
         # Patch Vulnerability
         # Is it necessary to patch a vulnerabilities to a host already compromised?
@@ -78,10 +95,10 @@ class ModelGenerator:
                     new_edges = deepcopy(edges)
                     new_edges.remove((action.subtarget, action.target))
                     s = State(vulnerabilities, compromised_hosts, new_edges)
-                    self.add_new_state(s, current_state, action, 1, 0.5, 0)
+                    self.add_new_state(s, current_state, action, 1, -self.networkInfo.get_cvss(action.target), 0)
 
     def initialize_q_table(self):
-        self.q_table = [[0 for x in range(len(self.actions))] for y in range(len(self.states))]
+        self.q_table = [[0 for x in range(len(self.q_actions))] for y in range(len(self.states))]
 
     def train_model(self, gamma, lrn_rate, epsilon, max_epochs):
         for i in range(max_epochs):
@@ -98,7 +115,7 @@ class ModelGenerator:
                     if n_s is None:
                         break
                 else:
-                    n_s = self.get_state_from_action(curr_s, self.actions[a])
+                    n_s = self.get_state_from_action(curr_s, self.actions[a-1])
 
                 if random.uniform(0, 1) < self.trans[curr_s][n_s].rate:
                     reward = self.trans[curr_s][n_s].reward_success
@@ -113,6 +130,7 @@ class ModelGenerator:
                                           (lrn_rate * (reward + (gamma * nn_q)))
 
                 curr_s = n_s
+        self.q_table = np.around(self.q_table, decimals=3)
 
     def get_next_actions(self, state_index):
         actions = [0]
@@ -120,7 +138,7 @@ class ModelGenerator:
             if self.trans[state_index][j] is not None:
                 for a in self.actions:
                     if self.trans[state_index][j].action == a:
-                        actions.append(self.actions.index(a))
+                        actions.append(self.actions.index(a)+1)
 
         return actions
 
@@ -181,11 +199,18 @@ class ModelGenerator:
             if state == s:
                 return state.id
 
-    def get_adjs(self, host, edges):
+    def get_adjs_from(self, host, edges):
         adjs = []
         for edge in edges:
             if edge[0] == host:
                 adjs.append(edge[1])
+        return adjs
+
+    def get_adjs_to(self, host, edges):
+        adjs = []
+        for edge in edges:
+            if edge[1] == host:
+                adjs.append(edge[0])
         return adjs
 
     def get_initial_vuls(self):
