@@ -1,7 +1,10 @@
+import imp
 import networkx as nx
 import matplotlib.pyplot as plt
 import numpy as np
 import random
+from vulnerability_info import VulnerabilityInfo
+from mitigation_info import Mitigation
 
 VUL_PROB = 1.0  # Define the probability host will only have one vul
 LINK_COF = 1.5  # The number of links compare to hosts, for example with LINK_COF = 1.5, 10 hosts will have 15 links
@@ -62,28 +65,3 @@ class NetworkInfo:
         nx.draw(self.network, node_color=color_map, with_labels=True)
         plt.title = "Network Structure"
         plt.show()
-
-
-class VulnerabilityInfo:
-    def __init__(self):
-        self.cost = 0
-        self.prob_success = 0
-        self.id = 0
-
-    def random_generate(self, id):
-        self.id = id
-        self.cost = random.randint(0, 20) / 20
-        self.prob_success = random.randint(0, 20) / 20
-        return self
-
-    def __eq__(self, other):
-        if self.id == other.id:
-            return True
-        else:
-            return False
-
-
-class Mitigation:
-    def __init__(self, cost, prob_success):
-        self.cost = cost
-        self.prob_success = prob_success
